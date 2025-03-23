@@ -1,8 +1,30 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useState } from "react";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
+
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const Home = () => {
   const { user, isAcceptor, isDonor } = useAuth();
+  const [isChatbotOpen, setChatbotOpen] = useState(false);
 
   // Determine where to redirect authenticated users
   const getDashboardLink = () => {
@@ -11,6 +33,108 @@ const Home = () => {
       if (isDonor) return "/donor/dashboard";
     }
     return "/login";
+  };
+
+  const toggleChatbot = () => {
+    setChatbotOpen(!isChatbotOpen);
+  };
+
+  // Chart data
+  const chartData = {
+    labels: ["January", "February", "March", "April", "May", "June"],
+    datasets: [
+      {
+        label: "Meals Donated",
+        data: [1200, 1900, 2300, 2800, 3200, 3700],
+        backgroundColor: "rgba(34, 197, 94, 0.7)",
+        borderColor: "rgba(34, 197, 94, 1)",
+        borderWidth: 1,
+      },
+      {
+        label: "Food Requests",
+        data: [1500, 2100, 2500, 3000, 3500, 4000],
+        backgroundColor: "rgba(59, 130, 246, 0.7)",
+        borderColor: "rgba(59, 130, 246, 1)",
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  // Chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "top",
+        labels: {
+          font: {
+            size: 14,
+            weight: "bold",
+          },
+          usePointStyle: true,
+          padding: 20,
+          color: "#4b5563",
+        },
+      },
+      title: {
+        display: true,
+        text: "Donation Activity in 2023",
+        font: {
+          size: 18,
+          weight: "bold",
+        },
+        color: "#1f2937",
+        padding: {
+          bottom: 20,
+        },
+      },
+      tooltip: {
+        backgroundColor: "rgba(17, 24, 39, 0.8)",
+        titleFont: {
+          size: 14,
+        },
+        bodyFont: {
+          size: 13,
+        },
+        padding: 12,
+        cornerRadius: 8,
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: "Number of Meals",
+          font: {
+            size: 14,
+            weight: "bold",
+          },
+          color: "#4b5563",
+        },
+        grid: {
+          color: "rgba(229, 231, 235, 0.5)",
+        },
+        ticks: {
+          font: {
+            size: 12,
+          },
+          color: "#4b5563",
+        },
+      },
+      x: {
+        grid: {
+          color: "rgba(229, 231, 235, 0.5)",
+        },
+        ticks: {
+          font: {
+            size: 12,
+          },
+          color: "#4b5563",
+        },
+      },
+    },
   };
 
   return (
@@ -104,7 +228,7 @@ const Home = () => {
             waste and ensuring those in need have access to nutritious meals.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
             <div className="bg-white p-6 rounded-lg shadow-md transition-all">
               <div className="text-4xl font-bold text-green-600 mb-2">
                 10,000+
@@ -122,6 +246,16 @@ const Home = () => {
             <div className="bg-white p-6 rounded-lg shadow-md transition-all">
               <div className="text-4xl font-bold text-green-600 mb-2">250+</div>
               <div className="text-gray-700 font-medium">Active Donors</div>
+            </div>
+          </div>
+
+          {/* Donations Chart */}
+          <div className="rounded-lg p-6 mx-auto max-w-4xl">
+            <h3 className="text-2xl font-semibold text-gray-800 mb-6 text-center">
+              Monthly Donation Activity
+            </h3>
+            <div className="h-96">
+              <Bar data={chartData} options={chartOptions} />
             </div>
           </div>
         </div>
@@ -368,6 +502,59 @@ const Home = () => {
           </div>
         </div>
       </footer>
+
+      {/* Chatbot */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+        {/* Chatbot Button */}
+        <button
+          onClick={toggleChatbot}
+          className="bg-green-600 text-white rounded-full p-4 shadow-lg hover:bg-green-700 transition-all mb-2"
+        >
+          {isChatbotOpen ? (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-8 w-8"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-8 w-8"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+              />
+            </svg>
+          )}
+        </button>
+
+        {/* Chatbot Container */}
+        {isChatbotOpen && (
+          <div className="w-96 h-[500px] bg-white rounded-lg shadow-xl overflow-hidden transition-all duration-300 ease-in-out">
+            <iframe
+              src="https://www.chatbase.co/chatbot-iframe/1H09D5k-YNNKBH-gp7htX"
+              width="100%"
+              style={{ height: "100%", minHeight: "500px" }}
+              frameBorder="0"
+            ></iframe>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
