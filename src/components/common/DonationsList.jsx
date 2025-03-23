@@ -43,13 +43,33 @@ const DonationsList = ({ donations, loading, error, userType, onUpdate }) => {
       console.log("Claim response data:", data);
       if (error) {
         console.error("Supabase error:", error);
+        if (
+          error.message &&
+          error.message.includes("not found or not available")
+        ) {
+          setActionError(
+            "This donation is no longer available. It may have been claimed by someone else."
+          );
+        } else if (error.code === "PGRST116") {
+          setActionError(
+            "You don't have permission to claim this donation. Please try again or contact support."
+          );
+        } else if (error.code === "42501") {
+          setActionError(
+            "Permission denied. Please try logging out and logging back in."
+          );
+        } else {
+          setActionError("Failed to claim donation. Please try again later.");
+        }
         throw error;
       }
 
       if (onUpdate) onUpdate(data[0]);
     } catch (err) {
       console.error("Error claiming donation:", err);
-      setActionError("Failed to claim donation. Please try again.");
+      if (!actionError) {
+        setActionError("Failed to claim donation. Please try again.");
+      }
     } finally {
       setProcessingId(null);
     }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 const DonorSidebar = ({ activeTab, setActiveTab, logout }) => {
   const [collapsed, setCollapsed] = useState(false);
@@ -161,6 +162,48 @@ const DonorSidebar = ({ activeTab, setActiveTab, logout }) => {
       </nav>
 
       <div className="absolute bottom-0 w-full border-t border-slate-700 p-4">
+        {/* Home button */}
+        <Link
+          to="/"
+          onMouseEnter={() => setHoveredItem("home")}
+          onMouseLeave={() => setHoveredItem(null)}
+          className={`text-white flex items-center p-0 rounded-lg transition-all duration-300 mb-3 ${
+            collapsed ? "justify-center w-full" : "w-full"
+          }`}
+          aria-label="Go to Home"
+        >
+          <div className="flex items-center px-4 py-3 rounded-lg hover:bg-green-600 transition-all duration-300">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-7 w-7"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span
+              className={`ml-4 text-lg font-medium transition-opacity duration-300 ${
+                collapsed ? "hidden" : "block"
+              }`}
+            >
+              Home
+            </span>
+          </div>
+
+          {/* Tooltip for home in collapsed state */}
+          {collapsed && hoveredItem === "home" && (
+            <div className="absolute left-full bottom-0 mb-16 ml-3 px-3 py-2 bg-slate-900 text-white text-sm rounded-md shadow-xl z-50">
+              Go to Home
+            </div>
+          )}
+        </Link>
+
+        {/* Logout button */}
         <button
           onClick={logout}
           onMouseEnter={() => setHoveredItem("logout")}

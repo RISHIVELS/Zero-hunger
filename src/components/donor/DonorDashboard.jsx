@@ -17,6 +17,7 @@ import {
   BarElement,
   Title,
   RadialLinearScale,
+  PolarAreaController,
 } from "chart.js";
 import { Doughnut, Bar, PolarArea } from "react-chartjs-2";
 
@@ -26,10 +27,11 @@ ChartJS.register(
   CategoryScale,
   LinearScale,
   BarElement,
+  RadialLinearScale,
+  PolarAreaController,
   Title,
   Tooltip,
-  Legend,
-  RadialLinearScale
+  Legend
 );
 
 const DonorDashboard = () => {
