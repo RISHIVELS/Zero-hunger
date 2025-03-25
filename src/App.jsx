@@ -14,11 +14,18 @@ import Register from "./components/auth/Register";
 // Dashboard components
 import AcceptorDashboard from "./components/acceptor/AcceptorDashboard";
 import DonorDashboard from "./components/donor/DonorDashboard";
+import WarehouseDashboard from "./components/warehouse/WarehouseDashboard";
 
 // Common components
 import Home from "./components/common/Home";
 
 function App() {
+  const allowedRoles = {
+    donor: ["donor"],
+    acceptor: ["acceptor"],
+    warehouse: ["warehouse"],
+  };
+
   return (
     <AuthProvider>
       <Router>
@@ -43,6 +50,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["donor"]}>
                 <DonorDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/warehouse/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={["warehouse"]}>
+                <WarehouseDashboard />
               </ProtectedRoute>
             }
           />

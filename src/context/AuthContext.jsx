@@ -70,6 +70,7 @@ export const AuthProvider = ({ children }) => {
     userRole,
     isAcceptor: userRole === "acceptor",
     isDonor: userRole === "donor",
+    isWarehouse: userRole === "warehouse",
     loading,
     logout,
   };

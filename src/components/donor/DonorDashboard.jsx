@@ -4,9 +4,14 @@ import {
   getDonationRequests,
   subscribeToNewDonations,
   subscribeToUpdatedDonations,
+  subscribeToUserNotifications,
+  claimDonation,
+  confirmDonation,
 } from "../../services/supabase";
 import DonorSidebar from "./DonorSidebar";
 import DonationsList from "../common/DonationsList";
+import TrackingStatus from "../common/TrackingStatus";
+import NotificationCenter from "../common/NotificationCenter";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -332,140 +337,375 @@ const DonorDashboard = () => {
     }
   };
 
-  // Filter donations based on active tab
-  const filteredDonations = donations.filter((donation) => {
-    // Guard against undefined donations
-    if (!donation) return false;
-
-    if (activeTab === "available") {
-      return donation.status === "open";
-    } else if (activeTab === "claimed" && user) {
-      return donation.status === "claimed" && donation.donor_id === user.id;
-    } else if (activeTab === "confirmed" && user) {
-      return donation.status === "confirmed" && donation.donor_id === user.id;
-    } else if (activeTab === "stats") {
-      return false; // Don't show donations in stats tab
-    }
-    return true;
-  });
-
-  // Show loading indicator if user authentication is not completed
-  if (!user) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
-            <span className="sr-only">Loading...</span>
-          </div>
-          <p className="mt-2">Loading user data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const renderTabContent = () => {
-    if (activeTab === "stats") {
-      return (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center transition-transform hover:scale-105">
-              <h3 className="text-xl font-semibold mb-2">Available Requests</h3>
-              <p className="text-4xl font-bold">{stats.totalAvailable}</p>
-            </div>
-
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center transition-transform hover:scale-105">
-              <h3 className="text-xl font-semibold mb-2">Your Claimed</h3>
-              <p className="text-4xl font-bold">{stats.claimed}</p>
-            </div>
-
-            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center transition-transform hover:scale-105">
-              <h3 className="text-xl font-semibold mb-2">Your Confirmed</h3>
-              <p className="text-4xl font-bold">{stats.confirmed}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-lg p-6 transition-all">
-              <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
-                Donation Status
-              </h3>
-              <div className="h-64">
-                <Doughnut data={statusChartData} options={chartOptions} />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 transition-all">
-              <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
-                Monthly Donations
-              </h3>
-              <div className="h-64">
-                <Bar data={monthlyChartData} options={barChartOptions} />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6 transition-all">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
-              Donation Categories
-            </h3>
-            <div className="h-64 max-w-md mx-auto">
-              <PolarArea data={categoryChartData} options={chartOptions} />
-            </div>
-          </div>
-        </div>
+  // Add these functions before the renderTabContent function
+  const handleClaimDonation = async (donationId) => {
+    try {
+      setLoading(true);
+      const { data, error } = await claimDonation(
+        donationId,
+        user.id,
+        user.user_metadata?.name || "Anonymous Donor"
       );
-    } else {
-      return (
-        <DonationsList
-          donations={filteredDonations}
-          loading={loading}
-          error={error}
-          userType="donor"
-          onUpdate={handleDonationUpdate}
-        />
+
+      if (error) throw error;
+
+      // Update local state
+      setDonations((prev) =>
+        prev.map((donation) =>
+          donation.id === donationId
+            ? {
+                ...donation,
+                donor_id: user.id,
+                donor_name: user.user_metadata?.name || "Anonymous Donor",
+                status: "claimed",
+              }
+            : donation
+        )
       );
+
+      // Show notification
+      setNotification({
+        message: `You have successfully claimed this donation.`,
+        id: donationId,
+        type: "claimed",
+      });
+
+      // Clear notification after 5 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+    } catch (err) {
+      console.error("Error claiming donation:", err);
+      setError("Failed to claim donation. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  return (
-    <div className="flex h-screen bg-gray-100">
-      <DonorSidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        logout={logout}
-      />
+  const handleConfirmDonation = async (donationId) => {
+    try {
+      setLoading(true);
+      const { data, error } = await confirmDonation(donationId);
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
+      if (error) throw error;
+
+      // Update local state
+      setDonations((prev) =>
+        prev.map((donation) =>
+          donation.id === donationId
+            ? { ...donation, status: "confirmed" }
+            : donation
+        )
+      );
+
+      // Show notification
+      setNotification({
+        message: `You have confirmed the donation. It's now awaiting warehouse verification.`,
+        id: donationId,
+        type: "confirmed",
+      });
+
+      // Clear notification after 5 seconds
+      setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+    } catch (err) {
+      console.error("Error confirming donation:", err);
+      setError("Failed to confirm donation. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create or update the renderTabContent function to include tracking
+  const renderTabContent = () => {
+    const filteredDonations = donations.filter((donation) => {
+      switch (activeTab) {
+        case "available":
+          return donation.status === "open";
+        case "claimed":
+          return donation.status === "claimed" && donation.donor_id === user.id;
+        case "in_process":
+          return (
+            ["confirmed", "pending", "in_transit"].includes(donation.status) &&
+            donation.donor_id === user.id
+          );
+        case "completed":
+          return (
+            ["delivered", "cancelled"].includes(donation.status) &&
+            donation.donor_id === user.id
+          );
+        default:
+          return true;
+      }
+    });
+
+    const getEmptyMessage = () => {
+      switch (activeTab) {
+        case "available":
+          return "No available donation requests";
+        case "claimed":
+          return "You haven't claimed any donations yet";
+        case "in_process":
+          return "No donations in process";
+        case "completed":
+          return "No completed donations";
+        default:
+          return "No donations found";
+      }
+    };
+
+    if (filteredDonations.length === 0) {
+      return (
+        <div className="py-16 text-center">
+          <p className="text-lg text-gray-500">{getEmptyMessage()}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {filteredDonations.map((donation) => (
+          <div
+            key={donation.id}
+            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow p-5 border border-gray-200"
+          >
+            <div className="flex justify-between mb-4">
+              <h3 className="text-xl font-medium text-gray-800">
+                {donation.title}
+              </h3>
+              <div>
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                    donation.status === "open"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : donation.status === "claimed"
+                      ? "bg-blue-100 text-blue-800"
+                      : donation.status === "confirmed" ||
+                        donation.status === "pending" ||
+                        donation.status === "in_transit"
+                      ? "bg-purple-100 text-purple-800"
+                      : donation.status === "delivered"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {donation.status === "open"
+                    ? "Available"
+                    : donation.status === "claimed"
+                    ? "Claimed by you"
+                    : donation.status === "confirmed"
+                    ? "Waiting for Warehouse"
+                    : donation.status === "pending"
+                    ? "Processing"
+                    : donation.status === "in_transit"
+                    ? "In Transit"
+                    : donation.status === "delivered"
+                    ? "Delivered"
+                    : "Cancelled"}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6 mb-4">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Type</p>
+                <p className="font-medium text-gray-800">
+                  {donation.food_type}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Quantity</p>
+                <p className="font-medium text-gray-800">{donation.quantity}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Expires</p>
+                <p className="font-medium text-gray-800">
+                  {new Date(donation.expiry_date).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-500 mb-1">Location</p>
+              <p className="font-medium text-gray-800">{donation.location}</p>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-sm text-gray-500 mb-1">Description</p>
+              <p className="text-gray-800">{donation.description}</p>
+            </div>
+
+            {/* Display tracking status for confirmed/in-process donations */}
+            {[
+              "confirmed",
+              "pending",
+              "in_transit",
+              "delivered",
+              "cancelled",
+            ].includes(donation.status) && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Tracking Status
+                </h4>
+                <TrackingStatus currentStatus={donation.status} />
+                {donation.warehouse_name && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Last updated by: {donation.warehouse_name}
+                    {donation.warehouse_updated_at && (
+                      <span>
+                        {" "}
+                        •{" "}
+                        {new Date(
+                          donation.warehouse_updated_at
+                        ).toLocaleString()}
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <div className="text-sm text-gray-500">
+                Requested by: {donation.acceptor_name}
+              </div>
+              {donation.status === "open" && (
+                <button
+                  onClick={() => handleClaimDonation(donation.id)}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+                >
+                  Claim Donation
+                </button>
+              )}
+              {donation.status === "claimed" &&
+                donation.donor_id === user.id && (
+                  <button
+                    onClick={() => handleConfirmDonation(donation.id)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                  >
+                    Confirm Donation
+                  </button>
+                )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      <DonorSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      <div className="flex-1 p-8">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Donor Dashboard
+            </h1>
+            <p className="text-gray-600 mt-1">
+              Welcome back, {user?.user_metadata?.name || "Donor"}
+            </p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <NotificationCenter />
+            <button
+              onClick={logout}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Show notification */}
         {notification && (
           <div
-            className={`fixed top-4 right-4 ${
-              notification.type === "confirmed"
-                ? "bg-blue-100 border-blue-400 text-blue-700"
-                : "bg-green-100 border-green-400 text-green-700"
-            } px-4 py-3 rounded-lg shadow-md animate-fade-in-out transition-opacity border`}
+            className={`mb-6 p-4 rounded-md ${
+              notification.type === "new"
+                ? "bg-blue-50 border border-blue-200 text-blue-700"
+                : notification.type === "confirmed"
+                ? "bg-green-50 border border-green-200 text-green-700"
+                : "bg-yellow-50 border border-yellow-200 text-yellow-700"
+            }`}
           >
-            <strong className="font-bold">
-              {notification.type === "confirmed"
-                ? "Confirmed! "
-                : "New Request! "}
-            </strong>
-            <span className="block sm:inline">{notification.message}</span>
+            <p className="font-medium">{notification.message}</p>
           </div>
         )}
 
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-1">
-            Donor Dashboard
-          </h1>
-          <p className="text-gray-600">
-            Welcome, {user?.user_metadata?.name || "User"}
-          </p>
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md">
+            <p className="font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* Tab buttons */}
+        <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-sm mb-8">
+          <button
+            onClick={() => setActiveTab("available")}
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "available"
+                ? "bg-green-600 text-white"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            Available
+          </button>
+          <button
+            onClick={() => setActiveTab("claimed")}
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "claimed"
+                ? "bg-blue-600 text-white"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            Claimed
+          </button>
+          <button
+            onClick={() => setActiveTab("in_process")}
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "in_process"
+                ? "bg-purple-600 text-white"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            In Process
+          </button>
+          <button
+            onClick={() => setActiveTab("completed")}
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === "completed"
+                ? "bg-gray-800 text-white"
+                : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            Completed
+          </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-md p-6">
-          {renderTabContent()}
-        </div>
-      </main>
+        {/* Render tab content */}
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+          </div>
+        ) : (
+          renderTabContent()
+        )}
+      </div>
     </div>
   );
 };

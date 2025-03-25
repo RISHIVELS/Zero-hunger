@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { signUp } from "../../services/supabase";
+import { signUp, checkWarehouseCode } from "../../services/supabase";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -10,12 +10,28 @@ const Register = () => {
     password: "",
     confirmPassword: "",
     role: "",
+    warehouseCode: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showWarehouseCode, setShowWarehouseCode] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    if (name === "role" && value === "warehouse") {
+      setShowWarehouseCode(true);
+    } else if (name === "role" && value !== "warehouse") {
+      setShowWarehouseCode(false);
+      // Clear warehouse code if user switches away from warehouse role
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+        warehouseCode: "",
+      }));
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -33,6 +49,31 @@ const Register = () => {
 
     if (!formData.role) {
       return setError("Please select a role");
+    }
+
+    // Validate warehouse code if role is warehouse
+    if (formData.role === "warehouse") {
+      if (!formData.warehouseCode) {
+        return setError("Warehouse access code is required");
+      }
+
+      // Check if the code is valid
+      try {
+        const { data, error: codeError } = await checkWarehouseCode(
+          formData.warehouseCode
+        );
+
+        if (codeError) {
+          throw codeError;
+        }
+
+        if (!data || data.length === 0) {
+          return setError("Invalid warehouse access code");
+        }
+      } catch (err) {
+        console.error("Error checking warehouse code:", err);
+        return setError("Failed to verify warehouse access code");
+      }
     }
 
     setLoading(true);
@@ -143,7 +184,7 @@ const Register = () => {
 
           <div className="mb-6">
             <label className="block text-gray-700 mb-2">Account Type</label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <label
                 className={`flex items-center p-3 border rounded-lg cursor-pointer ${
                   formData.role === "acceptor"
@@ -161,9 +202,7 @@ const Register = () => {
                 />
                 <div className="text-center w-full">
                   <div className="font-medium">Acceptor</div>
-                  <div className="text-xs text-gray-500">
-                    Request food donations
-                  </div>
+                  <div className="text-xs text-gray-500">Request food</div>
                 </div>
               </label>
               <label
@@ -186,8 +225,52 @@ const Register = () => {
                   <div className="text-xs text-gray-500">Donate food</div>
                 </div>
               </label>
+              <label
+                className={`flex items-center p-3 border rounded-lg cursor-pointer ${
+                  formData.role === "warehouse"
+                    ? "bg-purple-50 border-purple-500"
+                    : "border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="role"
+                  value="warehouse"
+                  checked={formData.role === "warehouse"}
+                  onChange={handleChange}
+                  className="hidden"
+                />
+                <div className="text-center w-full">
+                  <div className="font-medium">Warehouse</div>
+                  <div className="text-xs text-gray-500">Verify donations</div>
+                </div>
+              </label>
             </div>
           </div>
+
+          {showWarehouseCode && (
+            <div className="mb-6">
+              <label
+                className="block text-gray-700 mb-2"
+                htmlFor="warehouseCode"
+              >
+                Warehouse Access Code
+              </label>
+              <input
+                id="warehouseCode"
+                name="warehouseCode"
+                type="password"
+                value={formData.warehouseCode}
+                onChange={handleChange}
+                required={formData.role === "warehouse"}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="Enter access code"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This code is required for warehouse staff registration
+              </p>
+            </div>
+          )}
 
           <button
             type="submit"

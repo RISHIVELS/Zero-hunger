@@ -95,6 +95,26 @@ export const getCurrentUser = async () => {
   return { data, error };
 };
 
+// Warehouse authentication
+export const checkWarehouseCode = async (code) => {
+  const { data, error } = await supabase
+    .from("warehouse_secrets")
+    .select("*")
+    .eq("access_code", code)
+    .eq("is_active", true)
+    .single();
+
+  if (data) {
+    // Update last_used_at timestamp
+    await supabase
+      .from("warehouse_secrets")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("id", data.id);
+  }
+
+  return { data, error };
+};
+
 // Database functions for donations
 export const createDonationRequest = async (donationData) => {
   const { data, error } = await supabase
@@ -151,42 +171,37 @@ export const claimDonation = async (donationId, donorId, donorName) => {
       return { data: null, error: notAvailableError };
     }
 
-    // Skip the RPC attempt since we confirmed it doesn't exist
-    // Try direct update
-    const { data, error } = await supabase
-      .from("donation_requests")
-      .update({
-        donor_id: donorId,
-        donor_name: donorName,
-        status: "claimed",
-        // Removed updated_at as it doesn't exist in the table
-      })
-      .eq("id", donationId)
-      .eq("status", "open") // Only update if status is still "open"
-      .select();
+    // Try the update with RPC instead of direct update
+    // This might bypass some RLS issues
+    const { data, error } = await supabase.rpc("claim_donation", {
+      donation_id: donationId,
+      donor_id: donorId,
+      donor_name: donorName,
+    });
 
-    console.log("claimDonation direct update response:", { data, error });
-
-    // If direct update failed, try a final approach
-    if (error) {
-      // Try a workaround by first selecting the donation again to establish a session connection
-      await supabase.auth.getSession();
-      const { data: refreshData, error: refreshError } = await supabase
+    // If RPC is not available, fall back to direct update
+    if (error && error.code === "42883") {
+      // Function doesn't exist
+      console.log(
+        "Claim donation RPC not available, falling back to direct update"
+      );
+      const { data: updateData, error: updateError } = await supabase
         .from("donation_requests")
         .update({
           donor_id: donorId,
           donor_name: donorName,
           status: "claimed",
-          // Removed updated_at as it doesn't exist in the table
         })
         .eq("id", donationId)
+        .eq("status", "open") // Only update if status is still "open"
         .select();
 
-      console.log("claimDonation refresh attempt response:", {
-        refreshData,
-        refreshError,
-      });
-      return { data: refreshData, error: refreshError };
+      if (updateError) {
+        console.error("Error in direct update:", updateError);
+        return { data: null, error: updateError };
+      }
+
+      return { data: updateData, error: null };
     }
 
     return { data, error };
@@ -201,9 +216,16 @@ export const confirmDonation = async (donationId) => {
     .from("donation_requests")
     .update({
       status: "confirmed",
+      confirmed_at: new Date().toISOString(),
     })
     .eq("id", donationId)
     .select();
+
+  // Update warehouse request to pending for approval
+  if (data && data.length > 0) {
+    await updateWarehouseRequest(donationId, "pending");
+  }
+
   return { data, error };
 };
 
@@ -212,6 +234,158 @@ export const updateDonationStatus = async (donationId, status) => {
     .from("donation_requests")
     .update({ status })
     .eq("id", donationId)
+    .select();
+  return { data, error };
+};
+
+// Warehouse-specific functions
+export const createWarehouseRequest = async (donationId) => {
+  const { data, error } = await supabase
+    .from("warehouse_requests")
+    .insert({
+      donation_id: donationId,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    })
+    .select();
+  return { data, error };
+};
+
+export const updateWarehouseRequest = async (
+  donationId,
+  status,
+  notes = null
+) => {
+  const { data, error } = await supabase
+    .from("warehouse_requests")
+    .update({
+      status: status,
+      notes: notes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("donation_id", donationId)
+    .select();
+  return { data, error };
+};
+
+export const getWarehouseRequests = async (status = null) => {
+  let query = supabase
+    .from("warehouse_requests")
+    .select(
+      `
+      *,
+      donation_requests (*)
+    `
+    )
+    .order("created_at", { ascending: false });
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+  return { data, error };
+};
+
+export const updateDonationTracking = async (
+  donationId,
+  status,
+  warehouseId,
+  warehouseName
+) => {
+  const { data: donation, error: fetchError } = await supabase
+    .from("donation_requests")
+    .select("*")
+    .eq("id", donationId)
+    .single();
+
+  if (fetchError) {
+    return { data: null, error: fetchError };
+  }
+
+  // Update the donation status
+  const { data, error } = await supabase
+    .from("donation_requests")
+    .update({
+      status: status,
+      warehouse_id: warehouseId,
+      warehouse_name: warehouseName,
+      warehouse_updated_at: new Date().toISOString(),
+    })
+    .eq("id", donationId)
+    .select();
+
+  if (error) {
+    return { data: null, error: error };
+  }
+
+  // Create notifications for donor and acceptor
+  if (data && data.length > 0) {
+    const donationData = data[0];
+    const message = `Your donation "${donationData.title}" has been updated to status: ${status}`;
+
+    // Notify donor
+    if (donationData.donor_id) {
+      await createNotification(
+        donationData.donor_id,
+        `Donation Status: ${status}`,
+        message,
+        donationId
+      );
+    }
+
+    // Notify acceptor
+    await createNotification(
+      donationData.acceptor_id,
+      `Donation Status: ${status}`,
+      message,
+      donationId
+    );
+
+    // Update warehouse request status
+    if (status === "delivered" || status === "cancelled") {
+      const finalStatus = status === "delivered" ? "approved" : "declined";
+      await updateWarehouseRequest(donationId, finalStatus);
+    }
+  }
+
+  return { data, error };
+};
+
+// Notification functions
+export const createNotification = async (
+  userId,
+  title,
+  message,
+  donationId
+) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      user_id: userId,
+      title: title,
+      message: message,
+      donation_id: donationId,
+      created_at: new Date().toISOString(),
+    })
+    .select();
+  return { data, error };
+};
+
+export const getUserNotifications = async (userId) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  return { data, error };
+};
+
+export const markNotificationAsRead = async (notificationId) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", notificationId)
     .select();
   return { data, error };
 };
@@ -242,6 +416,39 @@ export const subscribeToUpdatedDonations = (callback) => {
         event: "UPDATE",
         schema: "public",
         table: "donation_requests",
+      },
+      callback
+    )
+    .subscribe();
+};
+
+// Subscription for real-time updates for notifications
+export const subscribeToUserNotifications = (userId, callback) => {
+  return supabase
+    .channel("user_notifications_channel")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `user_id=eq.${userId}`,
+      },
+      callback
+    )
+    .subscribe();
+};
+
+// Additional subscription for warehouse requests
+export const subscribeToWarehouseRequests = (callback) => {
+  return supabase
+    .channel("warehouse_requests_channel")
+    .on(
+      "postgres_changes",
+      {
+        event: "*", // Listen to all events (INSERT, UPDATE, DELETE)
+        schema: "public",
+        table: "warehouse_requests",
       },
       callback
     )
